@@ -1,3 +1,4 @@
+# file for linear heir_mlr model
 data {
   int<lower=0> N; // the number of samples
   int<lower=1> L; // number of locations
