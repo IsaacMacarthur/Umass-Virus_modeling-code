@@ -1,3 +1,4 @@
+# this is the constant mechanistic model with s_v equal to the zero vector 
 data {
   int<lower=1> L; // the number of locations
   int<lower=1> V; // the number of different clades
