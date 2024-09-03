@@ -1,3 +1,4 @@
+# this is old functions that are probably not useful
 Mech_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, mlr_basic = NULL, skipped = NULL){
   # used for the linear Mech model
   energy_scores <- list() # the list of energy scores by location
