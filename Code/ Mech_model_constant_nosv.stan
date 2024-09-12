@@ -1,4 +1,4 @@
-# this is the constant mechanistic model with s_v equal to the zero vector 
+// this is the constant mechanistic model with s_v equal to the zero vector 
 data {
   int<lower=1> L; // the number of locations
   int<lower=1> V; // the number of different clades
@@ -43,7 +43,7 @@ for (v in 1:(V-1)) {
     // Vectorized likelihood calculation
     vector[N] log_prob;
     for (n in 1:N) {
-      log_prob[n] = categorical_logit_lpmf(y[n] | alpha[ll[n]] + beta[ll[n]] * t[n]); # should be equivalent to heirMLR as long as all sv =0
+      log_prob[n] = categorical_logit_lpmf(y[n] | alpha[ll[n]] + beta[ll[n]] * t[n]); // should be equivalent to heirMLR as long as all sv =0
     }
     target += weights*log_prob;
   }
