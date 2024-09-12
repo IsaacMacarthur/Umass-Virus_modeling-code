@@ -1,4 +1,4 @@
-# this is the constant mechanistic model with s_v not equal to the zero vector 
+// this is the constant mechanistic model with s_v not equal to the zero vector 
 data {
   int<lower=1> L; // the number of locations
   int<lower=1> V; // the number of different clades
@@ -19,7 +19,7 @@ parameters {
   array[V-1] real bloc; // the prior means for variants' growth rates 
 }
 transformed parameters{
- array[L] vector[V-1] raw_alpha; # the intercepts
+ array[L] vector[V-1] raw_alpha; // the intercepts
  for(v in 1:(V-1)){
    for( l in 1:L){
     raw_alpha[l,v] = log(expm1(raw_beta[l, v])) - raw_beta[l,v] + log(I[l,v]); 
@@ -45,9 +45,9 @@ for (v in 1:(V-1)) {
     for (n in 1:N) {
       vector[V] time_coef;
       for(v in 1:V){
-        time_coef[v] = beta[ll[n], v]*(t[n] - s_v_true[v]); # calculating the growth since t = s_v
+        time_coef[v] = beta[ll[n], v]*(t[n] - s_v_true[v]); // calculating the growth since t = s_v
       }
-      log_prob[n] = categorical_logit_lpmf(y[n] | alpha[ll[n]] + time_coef); # here we let s_v vary
+      log_prob[n] = categorical_logit_lpmf(y[n] | alpha[ll[n]] + time_coef); // here we let s_v vary
     }
     target += weights*log_prob;
   }
