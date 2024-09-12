@@ -395,3 +395,61 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
   }
   return(CIs)
 }
+plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL){
+  # stan is the object returned by stan maker or stan maker mech
+  # data is the virus data sets which points are to be ploted
+  # colors is the list of colors to be used for plotting
+  # target date is the last date you want to be plotted
+  # num_days is the amount of days to be plotted
+  # if shifted is true that means this is an s_v model, default False
+  # If CI is true, CI lines will be plotted default False
+  # CI level gives the CI level, does nothing if CI = False
+  # other_probs can take in a list of other probabilities to be plotted. The defualt is null
+  L <- stan$L
+  if(!(is.null(stan$K))){
+    K <- stan$K
+  } else {
+    K <- stan$V
+  }
+  model_probs <- mlr_probs(stan = stan, num_days = num_days, shifted = shifted)
+  if(CI){
+    CI_probs <- CI_maker(stan = stan, num_days = num_days, CI_level = CI_level, shifted = shifted)
+  }
+  for(l in 1:L){ 
+    dates <- c(1:num_days)
+    clades <- unique(data$clade)
+    clades <- clades[-1]
+    clades[K] <- "other" # have to put the clades in the right order
+    sample_probs <- matrix( nrow = K, ncol = num_days) # the matrix of observed probabilities
+    weights <- c(rep(0, num_days)) # weights for sizes of sample points
+    for( i in dates){ # getting the probabilities 
+      total_seq <- filter(data, date == (target_date - num_days)  + i, location == stan$target_lo[l]  )
+      weights[i] <- sum(total_seq$sequences) # counting the number of seq per day
+      days <- (rep(0, K))
+      if(sum(total_seq$sequences) == 0){
+        sample_probs[, i] <- c(rep(0, K)) # if no seq on a day, report 0
+      } else{
+        for( p in 1:K){
+          days[p] <- sum(filter(total_seq, clade == clades[p])$sequences)/sum(total_seq$sequences) # the sample probabilities per day
+        }
+        sample_probs[, i] <- days
+      }
+    }
+    weights <- 4*weights/max(weights)
+    main = paste(stan$target_lo[l], "Virus Probabilities(observed and predicted)") # creating the plots
+    plot(c(1:num_days), model_probs[[stan$target_lo[l]]][1, ], type = 'l', ylim = c(0,1), ylab = "Probability", xlab = paste("time from", target_date - num_days), col = colors[1], main = main) # Heir_MLR probs
+    for( num in 1:K){
+      points(c(1:num_days), sample_probs[num, ],col = colors[num], cex = weights ) # sample probs
+      if(CI){
+        lines(c(1:num_days), CI_probs[[paste(stan$target_lo[l], "upper")]][num, ], col = colors[num], lty = 3)
+        lines(c(1:num_days), CI_probs[[paste(stan$target_lo[l], "lower")]][num, ], col = colors[num], lty = 3)
+      }
+      if(!(is.null(other_probs))){
+        lines(c(1:num_days), other_probs[[stan$target_lo[l]]][num, ], col = colors[num], lty = 4)
+      }
+    }
+    for( num in 2:K){
+      lines(c(1:num_days), model_probs[[stan$target_lo[l]]][num, ], col = colors[num])
+    }
+  }
+}
