@@ -167,7 +167,7 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
       s_v = s_v
     )
     mlr_fit <- stan( # fitting the model
-      file = "Mech model_v2.stan",  
+      file = "Mech_model_constant_nosv.stan",  
       data = mlr_data,    
       chains = 4,
       control = list(max_treedepth = 10, adapt_delta = 0.9),
