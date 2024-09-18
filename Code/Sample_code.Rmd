@@ -1,0 +1,26 @@
+---
+title: "sample_code"
+author: "Isaac MacArthur"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+# before running any code run master function list and splines code
+Virus_counts <- read_tsv("C:/Users/isaac/Downloads/Virus counts 09-07-24.gz") # you could use any of the Virus files here
+target_date <- as.Date("2024-06-07")
+Virus_counts$clade <- combine_clades(Virus_counts, target_date, num_seq = 100, num_days = 70) # need to combine clades into other before fitting model, can change num_seq and num_days to determine what get combined into other
+stan_model <- stan_maker(Virus_counts,target_date, target_loc = "Colorado") # stan maker fits the non-mechanistic model, target loc allows you say where you want the model fit to, if Null it fits to all states that have enough seq in the last amount of days, the defaults are 90 seq in last 150 days form target date
+stan_model_mech_nosv <- stan_maker_Mech(Virus_counts,target_date, target_loc = "New York", alt_file = "Mech_model_constant_nosv.stan" ) # stan_maker_Mech fits the mechanistic model
+stan_model_mech_sv <- stan_maker_Mech(Virus_counts,target_date, target_loc = c("New York"), alt_file = "Mech_model_constant_sv.stan") # you can use alt_file to change the stan file, the defualt is the no sv model
+stan_model_splines <- stan_maker_splines(Virus_counts, target_date = target_date, target_loc = c("New York", "Ohio"))
+```
+```{r}
+# once you have models fit you can get CI's, mean probablities and plot
+mlr_model_probs <- mlr_probs(stan_model, num_days = 150) # num days gives the number of days of probablities to return counting from the start of the dataset that was used to fit the model, because we often use 150 days of data to fit the model, using num_days = 150 will get a nowcast up to the target date
+mech_model_probs_sv <- mlr_probs(stan_model_mech_sv, num_days = 150, shifted = T) # you can also use mlr_probs to get the probablities for the mech_model if the model uses s_v set shifted to true
+spline_probs <- mlr_probs_splines(stan_model_splines, 150) #mlr_probs_splines returns the probablities for the spline model
+mlr_model_CI <- CI_maker(stan_model, num_days = 150, CI_level = 0.6) # you can use CI to return CI's for each location it works the same as mlr_probs
+plot_data(stan_model_mech_nosv, Virus_counts, target_date = target_date, CI = T) # you can use plot data to plot the data and mean probablitites as well as CI's. It has a default list of colors and variants are colored in the same order as levels(data$clade) but with other last. In this example black is 24A, blue is 24B, red is 24C, and green is other.
+```
+
