@@ -1,4 +1,5 @@
-library(splines)
+
+   library(splines)
 stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date(), num_days = 150, target_loc = NULL, interations = 3000, warmup = 1000, stan_file = "Heir_MLR_Splines.stan" ){
   # data is a dataframe containing the columns sequences, location and date.
   # B is the degree of the spline
@@ -81,12 +82,13 @@ mlr_probs_splines <- function(stan, num_days){
   }
   return(full_probs)
 }
-get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, num_draws = 2000, mlr_basic = NULL){
+get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, N = 1, num_draws = 2000, mlr_basic = NULL){
   # stan takes a list returned by stan maker, here you are using the spline model
   # old_new is the data the stan was fit to
   # new_data is the data you want to compute the energy scores over
   # target date is the date the model was fit on
   # dates gives the dates from beginning of model to fit
+  # N is the number of times to sample for each posterior sample 
   # nowcast_length gives the length of the nowcast
   # num_draws is how many non-warmup draws the stan model has
   # mlr_basic can take a mlr model to compute energy scores over
@@ -99,11 +101,13 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
   }
   L <- stan$L
   B <- stan$B
-  clades <- unique(old_data$clade)
+  clades <- levels(old_data$clade)
   clades <- clades[-1]
   clades[K] <- "other" # have to put the clades in the right order
   draws <- extract(stan$mlr_fit)
   splines <- t(bs(c(1:max(dates)), degree =  B))
+  predicted_mat <- matrix(nrow = K, ncol = 100*N) # the matrix of X_i
+  random_draws <- matrix(nrow = K - 1, ncol = B + 1 ) # the matrix of random draws
   if(!is.null(mlr_basic)){
     energy_scores_mlr <- list()
   }
@@ -122,11 +126,9 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
       } else{
         for(j in 1:length(clades)){
           observed_data[j] <-sum(filter(new_data_loc, date == target_date - nowcast_length + i, clade == clades[j] )$sequences) 
-        }
-        predicted_mat <- matrix(nrow = K, ncol = 100) # the matrix of X_i
+        } 
         for( m in 1:100){
           days <- c(rep(0, K))
-          random_draws <- matrix(nrow = K - 1, ncol = B + 1 ) # the matrix of random draws
           for(q in 1:(K-1)){
             random_draws[q, 1] <- draws$raw_alpha[ceiling(runif(1, min = 0, max = num_draws)),l,q]
             for( b in 1:B){
@@ -136,7 +138,7 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
           }
           days[1:(K-1)] <- days[1:(K-1)]/(sum(days[1:(K-1)]) + 1) # softmaxing
           days[K] <- 1 - sum(days)
-          predicted_mat[, m] <- rmultinom(1, sum(observed_data),days)
+          predicted_mat[, (1 + (m-1)*N):(m*N)] <- rmultinom(N, sum(observed_data),days)
         }
         
         energy_vector[length(energy_vector) + 1] <- es_sample(observed_data, predicted_mat)
@@ -144,7 +146,7 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
           test_days <- data.frame(days = dates) # the days we are predicting on
           prediction <- predict(model, type = "probs", newdata = test_days)
           prediction <- t(prediction)
-          predicted_mat <- rmultinom(100, sum(observed_data),c(prediction[2:K, i], prediction[1, i]))
+          predicted_mat <- rmultinom(100*N, sum(observed_data),c(prediction[2:K, i], prediction[1, i]))
           energy_vector_mlr[length(energy_vector_mlr) + 1] <- es_sample(observed_data, predicted_mat)
         }
       }
