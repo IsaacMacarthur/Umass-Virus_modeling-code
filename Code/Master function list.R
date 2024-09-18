@@ -6,6 +6,7 @@ library(rstan)
 library(nnet)
 library(zoo)
 library("scoringRules")
+library(dplyr)
 loc_finder <- function(data, num_seq = 90, target_date = Sys.Date()){
   # takes in a virus dataset and returns all locations with at least num_seq cases in the last 60 days
   target_lo <- c()
@@ -219,7 +220,7 @@ mlr_fitter <- function(data, locations, target_date, days_before = 150){
   }
   return(mlrs)
 }
-get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, num_draws = 2000, mlr_basic = NULL, skipped = NULL, shifted = F){
+get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, num_draws = 2000, N = 1, mlr_basic = NULL, skipped = NULL, shifted = F){
   # stan takes a list returned by stan maker
   # old_new is the data the stan was fit to
   # new_data is the data you want to compute the energy scores over
@@ -227,6 +228,7 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
   # dates gives the dates from beginning of model to fit
   # nowcast_length gives the length of the nowcast
   # num_draws is how many non-warmup draws the stan model has
+  # N is the number of times each posterior sample is used to generate samples  
   # mlr_basic can take a mlr model to compute energy scores over
   # skipped can take a vector of string names of locations to skip
   # shifted means the Mech model with s_v not equal to the zero vector is being used
@@ -238,10 +240,12 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
     K <- stan$K
   }
   L <- stan$L
-  clades <- unique(old_data$clade)
+  clades <- levels(old_data$clade)
   clades <- clades[-1]
   clades[K] <- "other" # have to put the clades in the right order
   draws <- extract(stan$mlr_fit)
+  predicted_mat <- matrix(nrow = K, ncol = 100*N)
+  random_draws <- matrix(nrow = K - 1, ncol = 2 )
   if(!is.null(mlr_basic)){
     energy_scores_mlr <- list()
   }
@@ -266,10 +270,8 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
       } else{
         for(j in 1:length(clades)){
           observed_data[j] <-sum(filter(new_data_loc, date == target_date - nowcast_length + i, clade == clades[j] )$sequences) 
-        }
-        predicted_mat <- matrix(nrow = K, ncol = 100) # the matrix of X_i
-        for( m in 1:100){
-          random_draws <- matrix(nrow = K - 1, ncol = 2 ) # the matrix of random draws
+        } # the matrix of X_i
+        for( m in 1:100){ # the matrix of random draws
           for(q in 1:(K-1)){
             random_draws[q, ] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = num_draws)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = num_draws)),l,q] ) # getting the random draws 
           }
@@ -285,7 +287,7 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
             days <- days/(sum(days) + 1)
           }
           days[K] <- 1 - sum(days)
-          predicted_mat[, m] <- rmultinom(1, sum(observed_data),days)
+          predicted_mat[, (1 + (m-1)*(N)):(m*N)] <- rmultinom(N, sum(observed_data),days)
         }
         
         energy_vector[length(energy_vector) + 1] <- es_sample(observed_data, predicted_mat)
@@ -293,7 +295,7 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
           test_days <- data.frame(days = dates) # the days we are predicting on
           prediction <- predict(model, type = "probs", newdata = test_days)
           prediction <- t(prediction)
-          predicted_mat <- rmultinom(100, sum(observed_data),c(prediction[2:K, i], prediction[1, i]))
+          predicted_mat <- rmultinom(100*N, sum(observed_data),c(prediction[2:K, i], prediction[1, i]))
           energy_vector_mlr[length(energy_vector_mlr) + 1] <- es_sample(observed_data, predicted_mat)
         }
       }
@@ -417,7 +419,7 @@ plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "ye
   }
   for(l in 1:L){ 
     dates <- c(1:num_days)
-    clades <- unique(data$clade)
+    clades <- levels(data$clade)
     clades <- clades[-1]
     clades[K] <- "other" # have to put the clades in the right order
     sample_probs <- matrix( nrow = K, ncol = num_days) # the matrix of observed probabilities
@@ -452,4 +454,35 @@ plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "ye
       lines(c(1:num_days), model_probs[[stan$target_lo[l]]][num, ], col = colors[num])
     }
   }
+}
+#Function to delete a percentage of observations between a start and end date, chat GPT created code
+delete_percentage <- function(df, start_date, end_date, percentage) {
+  # Ensure the percentage is between 0 and 1
+  if (percentage < 0 | percentage > 1) {
+    stop("Percentage must be between 0 and 1.")
+  }
+  
+  # Convert start and end dates to Date class if they aren't already
+  start_date <- as.Date(start_date)
+  end_date <- as.Date(end_date)
+  
+  # Filter data between start_date and end_date
+  filtered_data <- df %>%
+    filter(date >= start_date & date <= end_date)
+  
+  # Determine the number of rows to delete based on the percentage
+  num_to_delete <- round(nrow(filtered_data) * percentage)
+  
+  # Randomly sample the rows to delete
+  rows_to_delete <- sample(1:nrow(filtered_data), size = num_to_delete)
+  
+  # Remove the selected rows from the filtered data
+  filtered_data_deleted <- filtered_data[-rows_to_delete, ]
+  
+  # Combine back the rows outside the date range with the remaining rows
+  final_df <- df %>%
+    filter(!(date >= start_date & date <= end_date)) %>%
+    bind_rows(filtered_data_deleted)
+  
+  return(final_df)
 }
