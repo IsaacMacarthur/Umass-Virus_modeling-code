@@ -10,9 +10,9 @@ output: html_document
 Virus_counts <- read_tsv("C:/Users/isaac/Downloads/Virus counts 09-07-24.gz") # you could use any of the Virus files here
 target_date <- as.Date("2024-06-07")
 Virus_counts$clade <- combine_clades(Virus_counts, target_date, num_seq = 100, num_days = 70) # need to combine clades into other before fitting model, can change num_seq and num_days to determine what get combined into other
-stan_model <- stan_maker(Virus_counts,target_date, target_loc = "Colorado") # stan maker fits the non-mechanistic model, target loc allows you say where you want the model fit to, if Null it fits to all states that have enough seq in the last amount of days, the defaults are 90 seq in last 150 days form target date
-stan_model_mech_nosv <- stan_maker_Mech(Virus_counts,target_date, target_loc = "New York", alt_file = "Mech_model_constant_nosv.stan" ) # stan_maker_Mech fits the mechanistic model
-stan_model_mech_sv <- stan_maker_Mech(Virus_counts,target_date, target_loc = c("New York"), alt_file = "Mech_model_constant_sv.stan") # you can use alt_file to change the stan file, the defualt is the no sv model
+stan_model <- stan_maker(Virus_counts,target_date = target_date, target_loc = "Colorado") # stan maker fits the non-mechanistic model, target loc allows you say where you want the model fit to, if Null it fits to all states that have enough seq in the last amount of days, the defaults are 90 seq in last 150 days form target date
+stan_model_mech_nosv <- stan_maker_Mech(Virus_counts,target_date = target_date, target_loc = "New York", alt_file = "Mech_model_constant_nosv.stan" ) # stan_maker_Mech fits the mechanistic model
+stan_model_mech_sv <- stan_maker_Mech(Virus_counts,target_date = target_date, target_loc = c("New York"), alt_file = "Mech_model_constant_sv.stan") # you can use alt_file to change the stan file, the defualt is the no sv model
 stan_model_splines <- stan_maker_splines(Virus_counts, target_date = target_date, target_loc = c("New York", "Ohio"))
 ```
 ```{r}
