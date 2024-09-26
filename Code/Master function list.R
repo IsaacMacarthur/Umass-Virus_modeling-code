@@ -7,6 +7,7 @@ library(nnet)
 library(zoo)
 library("scoringRules")
 library(dplyr)
+library(arrow)
 loc_finder <- function(data, num_seq = 90, target_date = Sys.Date()){
   # takes in a virus dataset and returns all locations with at least num_seq cases in the last 60 days
   target_lo <- c()
@@ -48,7 +49,11 @@ stan_maker <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 
   }
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) # days from start of dataset
   L = length(unique(data_case$ll))
-  K = length(unique(data_case$clade))
+  K = length(unique(data$clade))
+  clades <- unique(data$clade)
+  temp <- clades[1]
+  clades <- clades[-1]
+  clades[K] <- temp
   mlr_data <- list(
     weights = data_case$sequences, 
     L = L, # number of locations
@@ -67,7 +72,7 @@ stan_maker <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 
     cores = 8,
     refresh = 500,
   )
-  return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo ))
+  return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, clades = clades ))
 }
 stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 150, target_loc = NULL, inital = NULL, alt_file = NULL, interations = 3000, warmup = 1000){
   # data is a dataframe containing the columns sequences, location and date. 
@@ -105,7 +110,11 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
   }
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) + 1 # days from start of dataset
   L = length(unique(data_case$ll))
-  V = length(unique(data_case$clade))
+  V = length(unique(data$clade))
+  clades <- unique(data$clade)
+  temp <- clades[1]
+  clades <- clades[-1]
+  clades[V] <- temp
   if(!is.null(inital)){
     I = list(I = inital)
     mlr_data <- list(
@@ -130,7 +139,7 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
       cores = 8,
       refresh = 150,
     )
-    return(list(mlr_fit = mlr_fit, L = L, V = V, target_lo = target_lo, start_times = s_v, I = I ))
+    return(list(mlr_fit = mlr_fit, L = L, V = V, target_lo = target_lo, start_times = s_v, I = I, clades = clades ))
   } else if(!is.null(alt_file)){
     mlr_data <- list(
       weights = data_case$sequences, 
@@ -154,7 +163,7 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
       cores = 8,
       refresh = 150,
     )
-    return(list(mlr_fit = mlr_fit, L = L, V = V, target_lo = target_lo, start_times = s_v ))
+    return(list(mlr_fit = mlr_fit, L = L, V = V, target_lo = target_lo, start_times = s_v, clades = clades ))
   } else {
     mlr_data <- list(
       weights = data_case$sequences, 
@@ -178,6 +187,7 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
       cores = 8,
       refresh = 150,
     )
+    return(list(mlr_fit = mlr_fit, L = L, V = V, target_lo = target_lo, start_times = s_v, clades = clades ))
   }
 }
 combine_clades <- function(data, target_date = Sys.Date, num_days = 100, num_seq = 50, recombinant = T){
@@ -202,7 +212,22 @@ combine_clades <- function(data, target_date = Sys.Date, num_days = 100, num_seq
   data$clade <- fct_collapse(data$clade, other = minor_clades)
   return(data$clade)
 }
-
+trim_clades <- function(data,clades ){
+  if(any(clades == "other")){
+    minor_clades <- c()
+    j = 1
+    for(clade in unique(data$clade) ){
+      if(!(any(clades == clade ))){
+        minor_clades[j] <- clade
+        j = j + 1
+      }
+    }
+    data$clade <- fct_collapse(data$clade, other = minor_clades) 
+  } else{
+    data <- filter(data, clade %in% clades)
+  }
+  return(data)
+}
 mlr_fitter <- function(data, locations, target_date, days_before = 150){
   # data is the virus counts
   # locations is a vector of locations you want fitted
@@ -220,7 +245,7 @@ mlr_fitter <- function(data, locations, target_date, days_before = 150){
   }
   return(mlrs)
 }
-get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, num_draws = 2000, N = 1, mlr_basic = NULL, skipped = NULL, shifted = F){
+get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(119:160), nowcast_length = 30, num_draws = 2000, N = 1, mlr_basic = NULL, skipped = NULL, shifted = F){
   # stan takes a list returned by stan maker
   # old_new is the data the stan was fit to
   # new_data is the data you want to compute the energy scores over
@@ -241,6 +266,7 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
   }
   L <- stan$L
   clades <- levels(old_data$clade)
+  print(clades)
   clades <- clades[-1]
   clades[K] <- "other" # have to put the clades in the right order
   draws <- extract(stan$mlr_fit)
@@ -419,9 +445,10 @@ plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "ye
   }
   for(l in 1:L){ 
     dates <- c(1:num_days)
-    clades <- levels(data$clade)
+    clades <- unique(data$clade)
+    temp <- clades[1]
     clades <- clades[-1]
-    clades[K] <- "other" # have to put the clades in the right order
+    clades[K] <- temp # have to put the clades in the right order
     sample_probs <- matrix( nrow = K, ncol = num_days) # the matrix of observed probabilities
     weights <- c(rep(0, num_days)) # weights for sizes of sample points
     for( i in dates){ # getting the probabilities 
