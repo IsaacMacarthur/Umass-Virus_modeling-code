@@ -6,7 +6,7 @@ data {
   array[N] int<lower=1, upper=K> y; // the clades
   array[N] int<lower=1, upper=L> ll; // locations
   array[N] real x; // the days of the samples
-  row_vector [N]  weights; # number of seq per location 
+  row_vector [N]  weights; // number of seq per location 
 }
 parameters {
   real<lower=0> bsd; // prior sd for betas
