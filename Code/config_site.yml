@@ -1,0 +1,12 @@
+clades:
+  - "24A"
+  - "24B"
+  - "24C"
+  - "24E"
+  - "recombinant"
+  - "other"
+
+target_date: "2024-10-09"
+
+data: "./Data/Virus counts"
+          
