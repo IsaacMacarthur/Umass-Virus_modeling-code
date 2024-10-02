@@ -8,6 +8,8 @@ library(zoo)
 library("scoringRules")
 library(dplyr)
 library(arrow)
+library(shinystan)
+library(yaml)
 loc_finder <- function(data, num_seq = 90, target_date = Sys.Date()){
   # takes in a virus dataset and returns all locations with at least num_seq cases in the last 60 days
   target_lo <- c()
@@ -43,7 +45,7 @@ stan_maker <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 
   }
   data_case$ll <- c(1:length(data_case$clade)) # need numeric levels for the locations
   j = 1
-  for( k in unique(data_case$location)){
+  for( k in target_lo){
     data_case$ll <- ifelse(data_case$location == k,j,data_case$ll )
     j = j + 1
   }
@@ -512,4 +514,109 @@ delete_percentage <- function(df, start_date, end_date, percentage) {
     bind_rows(filtered_data_deleted)
   
   return(final_df)
+}
+prediction_sampler <- function(stan, target_date, N = 100, dates = c(119:160)){
+  target_lo <- stan$target_lo
+  sample_ids <- c(rep("0", N*length(target_lo)*length(dates)*length(stan$clades))) # getting the right form for the ids
+  clade_ids <- c(rep(stan$clades, N*length(target_lo)*length(dates))) # the ids for each clade
+  origin_date <- c(rep(target_date,N*length(target_lo)*length(dates)*length(stan$clades))) # the date the forcast was created
+  location <- c(rep("0",N*length(target_lo)*length(dates)*length(stan$clades) )) # the locations
+  horizon <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the day we are forecasting or nowcasting
+  output_type <- c(rep("sample",N*length(target_lo)*length(dates)*length(stan$clades) )) 
+  values <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the samples 
+  temp <- c(rep(0, length(stan$clades))) # the samples for a given day
+  K <- stan$K
+  L <- stan$L
+  draws <- extract(stan$mlr_fit)
+  random_draws <- matrix(nrow = K - 1, ncol = 2 )
+  for(i in 1:length(target_lo)){
+    location[(1 + (i-1)*(N*length(stan$clades)*length(dates))):( (i)*(N*length(stan$clades)*length(dates)))] <- rep(target_lo[i],N*length(stan$clades)*length(dates))
+  }
+  for(j in 1:(length(target_lo)*length(dates)*N)){
+    sample_ids[(1 + (j-1)*K):( (j)*K)] <- rep(paste0("s",j-1), K)
+  }
+  for(l in 1:L){
+    for(i in 1:length(dates)){
+      for(m in 1:N){
+        for(q in 1:(K-1)){
+          random_draws[q, ] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = 2000)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = 2000)),l,q] ) # getting the random draws 
+        }
+        temp[1:(K-1)] <- exp(random_draws[, 1] + random_draws[, 2]*dates[i])/(sum(exp(random_draws[, 1] + random_draws[, 2]*dates[i]))+1)
+        temp[K] <- 1 - sum(temp[1:(K-1)])
+        values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
+        horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(dates[i] - (max(dates) - 10), K)
+      }
+    }
+  }
+  df <- data.frame(origin_date = origin_date, horizon = horizon,  clade = clade_ids,location = location, sample = sample, output_type_id = sample_ids, values = values )
+  return(df)
+}
+
+# Function to convert state names to abbreviations, Chat GPT created function
+convert_to_abbreviation <- function(states) {
+  state_abbreviation_map <- setNames(c(state.abb,"PR","DC"), c(state.name, "Puerto Rico", "Washington DC"))
+  sapply(states, function(state) state_abbreviation_map[[state]])
+}
+prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
+  # takes in the stan object, and the date we are modeling on, outputs a df of the varient-forecasting submission
+  K <- stan$K
+  L <- stan$L
+  target_lo <- convert_to_abbreviation(stan$target_lo) # mapping states to there two-letter form
+  sample_ids <- c(rep("0", N*length(target_lo)*length(dates)*length(stan$clades))) # getting the right form for the ids
+  clade_ids <- c(rep(stan$clades, N*length(target_lo)*length(dates))) # the ids for each clade
+  origin_date <- c(rep(given_date,N*length(target_lo)*length(dates)*length(stan$clades))) # the date the forecast was created
+  location <- c(rep("0",N*length(target_lo)*length(dates)*length(stan$clades) )) # the locations
+  mean_locations <- c(rep("0",L*K*length(dates) ))
+  horizon <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the day we are forecasting or nowcasting
+  output_type <- c(rep("sample",N*length(target_lo)*length(dates)*length(stan$clades) ))
+  values <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the samples 
+  temp <- c(rep(0, length(stan$clades))) # the samples for a given day
+  draws <- extract(stan$mlr_fit)
+  random_draws <- matrix(nrow = K - 1, ncol = 2 )
+  for(i in 1:length(target_lo)){
+    location[(1 + (i-1)*(N*length(stan$clades)*length(dates))):( (i)*(N*length(stan$clades)*length(dates)))] <- rep(target_lo[i],N*length(stan$clades)*length(dates))
+    mean_locations[(1 + (i-1)*K*length(dates)):((i)*K*length(dates))] <- rep(target_lo[i],length(stan$clades)*length(dates)) 
+  }
+  for(l in 1:L){
+    for(i in 1:(length(dates))){
+      for(m in 1:N){
+        if( m-1 < 10){
+          word <- rep(paste0(target_lo[l],"0",m-1), K) 
+        } else{
+          word <- rep(paste0(target_lo[l],m-1), K)
+        }
+        sample_ids[(1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))] <- word
+      }
+    }
+  }
+  for(l in 1:L){
+    for(i in 1:length(dates)){
+      for(m in 1:N){
+        for(q in 1:(K-1)){
+          random_draws[q, ] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = 2000)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = 2000)),l,q] ) # getting the random draws 
+        }
+        temp[1:(K-1)] <- exp(random_draws[, 1] + random_draws[, 2]*dates[i])/(sum(exp(random_draws[, 1] + random_draws[, 2]*dates[i]))+1)
+        temp[K] <- 1 - sum(temp[1:(K-1)])
+        values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
+        horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(given_date + i - 32, K)
+      }
+    }
+  }
+  horizon <- as.Date(horizon)
+  means <- mlr_probs(model, max(dates))
+  mean_values <- c(rep(0, L*K*(length(dates))))
+  mean_sample_ids <- c(rep("NA",L*K*length(dates) )) 
+  mean_output_type <- c(rep("mean",L*K*length(dates) ))
+  mean_clade_ids <- c(rep(stan$clades, length(target_lo)*length(dates)))
+  mean_origin_date <- c(rep(given_date,K*length(dates)*L))
+  mean_horizon <- rep(0 , K*L*length(dates))
+  for(l in 1:L){
+    for(i in 1:length(dates)){
+      mean_values[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- means[[stan$target_lo[l]]][, dates[i]]
+      mean_horizon[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- rep(given_date + i - 32, K)
+    }
+  }
+  mean_horizon <- as.Date(mean_horizon)
+  df <- data.frame(nowcast_date = c(origin_date, mean_origin_date), target_date = c(horizon, mean_horizon), clade = c(clade_ids, mean_clade_ids), location = c(location, mean_locations), output_type = c(output_type, mean_output_type) , output_type_id = c(sample_ids,mean_sample_ids), value = c(values, mean_values))
+  return(df)
 }
