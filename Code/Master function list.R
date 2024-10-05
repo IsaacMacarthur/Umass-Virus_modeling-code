@@ -584,6 +584,8 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
     }
   }
   mean_horizon <- as.Date(mean_horizon)
+  clade_ids <- as.character(clade_ids)
+  mean_clade_ids <- as.character(mean_clade_ids)
   df <- data.frame(nowcast_date = c(origin_date, mean_origin_date), target_date = c(horizon, mean_horizon), clade = c(clade_ids, mean_clade_ids), location = c(location, mean_locations), output_type = c(output_type, mean_output_type) , output_type_id = c(sample_ids,mean_sample_ids), value = c(values, mean_values))
   return(df)
 }
