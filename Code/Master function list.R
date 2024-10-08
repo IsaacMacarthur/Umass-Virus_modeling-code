@@ -539,7 +539,7 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
   values <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the samples 
   temp <- c(rep(0, length(stan$clades))) # the samples for a given day
   draws <- extract(stan$mlr_fit)
-  random_draws <- matrix(nrow = K - 1, ncol = 2 )
+  random_draws <- array(dim = c(K-1,2,N))
   for(i in 1:length(target_lo)){
     location[(1 + (i-1)*(N*length(stan$clades)*length(dates))):( (i)*(N*length(stan$clades)*length(dates)))] <- rep(target_lo[i],N*length(stan$clades)*length(dates))
     mean_locations[(1 + (i-1)*K*length(dates)):((i)*K*length(dates))] <- rep(target_lo[i],length(stan$clades)*length(dates)) 
@@ -557,15 +557,17 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
     }
   }
   for(l in 1:L){
+    for(n in 1:N){
+      for(q in 1:(K-1)){
+        random_draws[q, ,n] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = 2000)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = 2000)),l,q] ) # getting the random draws 
+      }
+    }
     for(i in 1:length(dates)){
       for(m in 1:N){
-        for(q in 1:(K-1)){
-          random_draws[q, ] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = 2000)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = 2000)),l,q] ) # getting the random draws 
-        }
-        temp[1:(K-1)] <- exp(random_draws[, 1] + random_draws[, 2]*dates[i])/(sum(exp(random_draws[, 1] + random_draws[, 2]*dates[i]))+1)
+        temp[1:(K-1)] <- exp(random_draws[, 1, m] + random_draws[, 2, m]*dates[i])/(sum(exp(random_draws[, 1, m] + random_draws[, 2, m]*dates[i]))+1)
         temp[K] <- 1 - sum(temp[1:(K-1)])
         values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
-        horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(given_date + i - 32, K)
+        horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(given_date + i - length(dates) + 10, K)
       }
     }
   }
@@ -580,7 +582,7 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
   for(l in 1:L){
     for(i in 1:length(dates)){
       mean_values[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- means[[stan$target_lo[l]]][, dates[i]]
-      mean_horizon[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- rep(given_date + i - 32, K)
+      mean_horizon[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- rep(given_date + i - length(dates) + 10, K)
     }
   }
   mean_horizon <- as.Date(mean_horizon)
