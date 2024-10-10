@@ -346,38 +346,49 @@ mlr_probs <- function(stan, num_days, shifted = F){
   # true, then uses time since the variant was introduced instead of days from beginning of dataset, used for
   # Mech model non-zero s_v
   full_probs <- list()
-  means <- get_posterior_mean(stan$mlr_fit, pars = c("raw_alpha", "raw_beta")) # the alpha and beta
+  means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta")) # the alpha and beta
   L = stan$L
   if(!is.null(stan$K)){
     K = stan$K
   } else{
     K = stan$V
   }
+  days <- rep(0, K)
   for(l in 1:L){
-    intercepts <- means[(1 + (K-1)*(l-1)):(K - 1 + (K-1)*(l-1))] # the alphas
-    coef <- means[(1 + (K-1)*L + (K-1)*(l-1)):((K-1 + (K-1)*L + (K-1)*(l-1))) ] # the beta's
-    probs <- matrix( nrow = K, ncol = num_days) # the matrix of probabilities for each day
+    intercepts <- means$raw_alpha[, l, ] # the alphas
+    coef <- means$raw_beta[ , l , ] # the beta's
+    probs <- array( dim = c(K, num_days, length(intercepts[1,]))) # the matrix of probabilities for each day
+    mean_probs <- matrix( nrow = K, ncol = num_days)
     dates <- c(1:num_days)
     if(!(shifted)){
-      for( i in dates){ # getting the probabilities 
-        days <- exp(intercepts + coef*dates[i])/(sum(exp(intercepts + coef*dates[i]))+1)
-        days[K] <- 1 - sum(days)
-        probs[, i] <- days
-      } 
-    } else {
-      for( i in dates){ # getting the probabilities 
-        days <- exp(intercepts + coef*(dates[i] - stan$start_times))
-        for( m in 1:(K-1)){
-          if(stan$start_times[m] >= i ){
-            days[m] <- 0.001
-          }
+      for(j in 1:length(intercepts[1, ])){
+        for( i in dates){ # getting the probabilities 
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1)
+          days[K] <- 1 - sum(days[1:(K-1)])
+          probs[  , i, j] <- days
         }
-        days <- days/(sum(days) + 1)
-        days[K] <- 1 - sum(days)
-        probs[, i] <- days
+      }
+    } else {
+      for( j in 1:length(intercepts[1, ])){
+        for( i in dates){ # getting the probabilities 
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j, ]*(dates[i] - stan$start_times))
+          for( m in 1:(K-1)){
+            if(stan$start_times[m] >= i ){
+              days[m] <- 0.001
+            }
+          }
+          days[1:(K-1)] <- days[1:(K-1)]/(sum(days[1:(K-1)]) + 1)
+          days[K] <- 1 - sum(days[1:(K-1)])
+          probs[, i, j] <- days
+        }
       }
     }
-    full_probs[[stan$target_lo[l]]] <- probs
+    for(i in 1:num_days){
+      for(j in 1:K){
+        mean_probs[j, i] <- mean(probs[j, i, ])
+      }
+    }
+    full_probs[[stan$target_lo[l]]] <-mean_probs
   }
   for(lo in stan$target_lo){
     row.names(full_probs[[lo]]) <- stan$clades
@@ -390,41 +401,55 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
   # with non-zero s_v
   L <- stan$L
   CIs <- list()
+  means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta"))
   if( is.null(stan$K)){
     K <- stan$V
   } else{
     K <- stan$K
   }
-  for( l in 1:L){
-    raw_alpha <- extract(stan$mlr_fit)$raw_alpha[, l, ]
-    raw_beta <- extract(stan$mlr_fit)$raw_beta[, l, ]
-    upper <- matrix(nrow = K, ncol = num_days)
+  days <- rep(0, K)
+  for(l in 1:L){
+    intercepts <- means$raw_alpha[, l, ] # the alphas
+    coef <- means$raw_beta[ , l , ] # the beta's
+    probs <- array( dim = c(K, num_days, length(intercepts[1,]))) # the matrix of probabilities for each day
+    upper <- matrix( nrow = K, ncol = num_days)
     lower <- matrix(nrow = K, ncol = num_days)
-    sample_probs <- matrix(nrow = K, ncol = length(raw_alpha[, 1]))
-    for(i in 1:num_days){
-      if(!shifted){
-        sample_probs[1:(K-1),] <- t(exp( raw_alpha + raw_beta*i)/(rowSums(exp( raw_alpha + raw_beta*i)) + 1))
-      } else{
-        temp <- matrix( nrow = K-1, ncol = length(raw_alpha[, 1]))
-        temp <- exp( t(raw_alpha) + t(raw_beta)*(i - stan$start_times))
-        temp <- t(temp)
-        for( j in 1:(K-1)){
-          if(stan$start_times[j] >= i){
-            temp[, j ] <- c(rep(0.001, length(temp[,j ])))
-          }
+    dates <- c(1:num_days)
+    if(!(shifted)){
+      for(j in 1:length(intercepts[1, ])){
+        for( i in dates){ # getting the probabilities 
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1)
+          days[K] <- 1 - sum(days[1:(K-1)])
+          probs[  , i, j] <- days
         }
-        temp <- temp/(rowSums(temp) + 1)
-        sample_probs[1:(K-1), ] <- t(temp)
       }
-      sample_probs[K, ] <- 1 - colSums(sample_probs[1:(K-1),])
-      for( k in 1:K){
-        upper[k, i] <- quantile(sample_probs[k, ], probs = CI_level)
-        lower[k, i] <- quantile(sample_probs[k, ], probs = 1- CI_level)
+    } else {
+      for( j in 1:length(intercepts[1, ])){
+        for( i in dates){ # getting the probabilities 
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j, ]*(dates[i] - stan$start_times))
+          for( m in 1:(K-1)){
+            if(stan$start_times[m] >= i ){
+              days[m] <- 0.001
+            }
+          }
+          days[1:(K-1)] <- days[1:(K-1)]/(sum(days[1:(K-1)]) + 1)
+          days[K] <- 1 - sum(days[1:(K-1)])
+          probs[, i, j] <- days
+        }
       }
     }
-    name <- 
-      CIs[[paste(stan$target_lo[l], "upper")]] <- upper
+    for(i in 1:num_days){
+      for(j in 1:K){
+        lower[j,i] <- quantile(probs[j, i,  ], probs = 1 - CI_level)
+        upper[j,i] <- quantile(probs[j, i,  ], probs =  CI_level)
+      }
+    }
+    CIs[[paste(stan$target_lo[l], "upper")]] <- upper
     CIs[[paste(stan$target_lo[l], "lower")]] <- lower
+  }
+  for(lo in stan$target_lo){
+    row.names(CIs[[paste(lo, "upper")]]) <- stan$clades
+    row.names(CIs[[paste(lo, "lower")]]) <- stan$clades
   }
   return(CIs)
 }
