@@ -440,7 +440,7 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
     }
     for(i in 1:num_days){
       for(j in 1:K){
-        lower[j,i] <- quantile(probs[j, i,  ], probs = (1 - (CI_level)/2))
+        lower[j,i] <- quantile(probs[j, i,  ], probs = (1 - CI_level)/2)
         upper[j,i] <- quantile(probs[j, i,  ], probs =  1- ((1-CI_level)/2))
       }
     }
