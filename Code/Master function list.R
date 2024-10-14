@@ -583,8 +583,9 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160)){
   }
   for(l in 1:L){
     for(n in 1:N){
+      c <- ceiling(runif(1, min = 0, max = length(draws$raw_alpha[ ,1, 1])/N))
       for(q in 1:(K-1)){
-        random_draws[q, ,n] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = 2000)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = 2000)),l,q] ) # getting the random draws 
+        random_draws[q, ,n] <- c(draws$raw_alpha[c + (n-1)*length(draws$raw_alpha[ ,1, 1])/N,l,q], draws$raw_beta[c*length(draws$raw_alpha[ ,1, 1])/N,l,q] ) # getting the random draws 
       }
     }
     for(i in 1:length(dates)){
