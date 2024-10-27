@@ -17,7 +17,7 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
   data_case <- filter(data, location %in% target_lo, date >= as.Date(target_date) - num_days, date <= as.Date(target_date)) # dating from April 1st
   data_case$mlr <- c(1:length(data_case$clade)) # need numeric levels for the mlr
   j = 1
-  for( k in unique(data_case$clade)){ # giving each clade a numeric level
+  for( k in unique(data$clade)){ # giving each clade a numeric level
     data_case$mlr <- ifelse(data_case$clade == k,j,data_case$mlr )
     j = j + 1
   }
@@ -30,6 +30,10 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) # days from start of dataset
   L = length(unique(data_case$ll))
   K = length(unique(data_case$clade))
+  clades <- unique(data$clade)
+  temp <- clades[1]
+  clades <- clades[-1]
+  clades[K] <- temp
   mlr_data <- list(
     weights = data_case$sequences, # the number of each trio
     L = L, # number of locations
@@ -49,14 +53,13 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
     cores = 8,
     refresh = 150,
   )
-  return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, B = B ))
+  return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, B = B, clades = clades ))
 }
 mlr_probs_splines <- function(stan, num_days){
   # returns a list of probs from day 0 to the given day
   # takes a stan object from the spline model, returned by stan_maker and the number of days probs wanted,
   full_probs <- list()
-  means <- get_posterior_mean(stan$mlr_fit, pars = c("raw_alpha")) # the alpha
-  betas <- get_posterior_mean(stan$mlr_fit, pars = c("raw_beta")) 
+  means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta")) # the alpha and beta 
   L = stan$L
   B = stan$B
   if(!is.null(stan$K)){
@@ -65,24 +68,35 @@ mlr_probs_splines <- function(stan, num_days){
     K = stan$V
   }
   for(l in 1:L){
-    intercepts <- means[(1 + (K-1)*(l-1)):(K - 1 + (K-1)*(l-1))] # the alphas
-    coef <- betas[(1 + B*(K-1)*(l-1)):(B*(K-1) + B*(K-1)*(l-1)) ] # the beta's
-    probs <- matrix( nrow = K, ncol = num_days) # the matrix of probabilities for each day
-    dates <- t(bs(c(1:num_days), degree =  B))
-    for( i in 1:num_days){ # getting the probabilities 
-      days <- c(rep(0, K))
-      for( k in 1:(K-1)){
-        days[k] <- exp(intercepts[k] + sum(coef[(1 + B*(k-1)):(B + B*(k-1))]*dates[, i]))
+    intercepts <- means$raw_alpha[, l, ] # the alphas
+    coef <- means$raw_beta[ , l , , ] # the beta's
+    probs <- array( dim = c(K, num_days, length(intercepts[1,]))) # the matrix of probabilities for each day
+    mean_probs <- matrix( nrow = K, ncol = num_days)
+    dates <- bs(c(1:num_days), degree =  B)
+    days <- c(rep(0, K))
+    for(j in 1:length(intercepts[1, ])){
+      for( i in 1:num_days){ # getting the probabilities 
+        for(k in 1:K-1){
+          days[k] <- exp(intercepts[j, k] + sum(coef[j,k,]*dates[i, ])) 
+        }
+        days[1:K-1] <- days[1:K-1]/(sum(days[1:K-1]) +1)
+        days[K] <- 1 - sum(days[1:(K-1)])
+        probs[  , i, j] <- days
       }
-      days[1:(K-1)] <- days[1:(K-1)]/(sum(days[1:(K-1)]) + 1) 
-      days[K] <- 1 - sum(days)
-      probs[, i] <- days
-    } 
-    full_probs[[stan$target_lo[l]]] <- probs
+    }
+    for(i in 1:num_days){
+      for(j in 1:K){
+        mean_probs[j, i] <- mean(probs[j, i, ])
+      }
+    }
+    full_probs[[stan$target_lo[l]]] <- mean_probs
+  }
+  for(lo in stan$target_lo){
+    row.names(full_probs[[lo]]) <- stan$clades
   }
   return(full_probs)
 }
-get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dates = c(120:160), nowcast_length = 30, N = 1, num_draws = 2000, mlr_basic = NULL){
+get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dates = c(119:160), nowcast_length = 31, N = 1, num_draws = 2000, mlr_basic = NULL){
   # stan takes a list returned by stan maker, here you are using the spline model
   # old_new is the data the stan was fit to
   # new_data is the data you want to compute the energy scores over
@@ -108,6 +122,7 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
   splines <- t(bs(c(1:max(dates)), degree =  B))
   predicted_mat <- matrix(nrow = K, ncol = 100*N) # the matrix of X_i
   random_draws <- matrix(nrow = K - 1, ncol = B + 1 ) # the matrix of random draws
+  num_draws <- length(draws$raw_alpha[,1,1])
   if(!is.null(mlr_basic)){
     energy_scores_mlr <- list()
   }
@@ -129,10 +144,11 @@ get_energy_scores_splines <- function(stan, old_data, new_data, target_date, dat
         } 
         for( m in 1:100){
           days <- c(rep(0, K))
+          rn <- ceiling(runif(1, min = 0, max = num_draws))
           for(q in 1:(K-1)){
-            random_draws[q, 1] <- draws$raw_alpha[ceiling(runif(1, min = 0, max = num_draws)),l,q]
+            random_draws[q, 1] <- draws$raw_alpha[rn,l,q]
             for( b in 1:B){
-              random_draws[q, b + 1] <- draws$raw_beta[ceiling(runif(1, min = 0, max = num_draws)),l,q,b] # getting the random draws 
+              random_draws[q, b + 1] <- draws$raw_beta[rn,l,q,b] # getting the random draws 
             }
             days[q] <- exp(random_draws[q, 1] + sum(random_draws[q, 2:(B+1)]*splines[, dates[i]]))
           }

@@ -247,7 +247,7 @@ mlr_fitter <- function(data, locations, target_date, days_before = 150){
   }
   return(mlrs)
 }
-get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(119:160), nowcast_length = 30, num_draws = 2000, N = 1, mlr_basic = NULL, skipped = NULL, shifted = F){
+get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(119:160), nowcast_length = 31, N = 1, mlr_basic = NULL, skipped = NULL, shifted = F){
   # stan takes a list returned by stan maker
   # old_new is the data the stan was fit to
   # new_data is the data you want to compute the energy scores over
@@ -267,13 +267,11 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
     K <- stan$K
   }
   L <- stan$L
-  clades <- levels(old_data$clade)
-  print(clades)
-  clades <- clades[-1]
-  clades[K] <- "other" # have to put the clades in the right order
+  clades <- stan$clades
   draws <- extract(stan$mlr_fit)
   predicted_mat <- matrix(nrow = K, ncol = 100*N)
   random_draws <- matrix(nrow = K - 1, ncol = 2 )
+  num_draws <- length(draws$raw_alpha[,1,1])
   if(!is.null(mlr_basic)){
     energy_scores_mlr <- list()
   }
@@ -300,8 +298,9 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
           observed_data[j] <-sum(filter(new_data_loc, date == target_date - nowcast_length + i, clade == clades[j] )$sequences) 
         } # the matrix of X_i
         for( m in 1:100){ # the matrix of random draws
+          draw <- ceiling(runif(1, min = 0, max = num_draws))
           for(q in 1:(K-1)){
-            random_draws[q, ] <- c(draws$raw_alpha[ceiling(runif(1, min = 0, max = num_draws)),l,q], draws$raw_beta[ceiling(runif(1, min = 0, max = num_draws)),l,q] ) # getting the random draws 
+            random_draws[q, ] <- c(draws$raw_alpha[draw,l,q], draws$raw_beta[draw,l,q] ) # getting the random draws 
           }
           if(!shifted){
             days <- exp(random_draws[, 1] + random_draws[, 2]*dates[i])/(sum(exp(random_draws[, 1] + random_draws[, 2]*dates[i]))+1) # softmaxing
