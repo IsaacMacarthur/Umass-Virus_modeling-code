@@ -2,11 +2,11 @@ data {
   int<lower=0> N; // the number of samples
   int<lower=1> L; // number of locations
   int<lower=1> K; // number of clades
-  int <lower =1> B; # the number of basis functions
+  int <lower =1> B; // the number of basis functions
   array[N] int<lower=1, upper=K> y; // the clades
   array[N] int<lower=1, upper=L> ll; // locations
   matrix[B,N] x; // the spline over the days of the samples
-  row_vector [N]  weights; # number of seq per location 
+  row_vector [N]  weights; // number of seq per location 
 }
 parameters {
   real<lower=0> bsd; // prior sd for betas

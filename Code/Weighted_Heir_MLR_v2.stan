@@ -16,10 +16,10 @@ parameters {
   array[L] vector[K-1] raw_beta; // betas without the reference variant
 }
 model {
-  bsd ~ normal(1, 1); // prior for the sd
-  bloc ~ normal(0, 1); // priors for the betas 
-  asd ~ normal(3,2 ); // prior for the alpha sd
-  aloc ~ normal(0, 3); // prior for the alpha means
+  bsd ~ normal(1, 10000); // prior for the sd
+  bloc ~ normal(0, 10000); // priors for the betas 
+  asd ~ normal(1, 10000); // prior for the alpha sd
+  aloc ~ normal(0, 10000); // prior for the alpha means
   for (k in 1:(K-1)) {
     raw_beta[:, k] ~ normal(bloc[k], bsd);
     raw_alpha[:, k] ~ normal(aloc[k], asd);
