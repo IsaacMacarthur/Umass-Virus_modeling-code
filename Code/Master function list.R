@@ -254,7 +254,6 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
   # target date is the date the model was fit on
   # dates gives the dates from beginning of model to fit
   # nowcast_length gives the length of the nowcast
-  # num_draws is how many non-warmup draws the stan model has
   # N is the number of times each posterior sample is used to generate samples  
   # mlr_basic can take a mlr model to compute energy scores over
   # skipped can take a vector of string names of locations to skip
