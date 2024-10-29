@@ -1,1 +1,3 @@
-We can keep a record of the models that we have submitted and how they have evolved here.
+We can keep a record of the models that we have submitted and how they have evolved here.  
+For week 1 (10/9/24), we submitted a version of the HMLR model that was Hierarchical in the time coefficient with different means per clade across locations, but a shared sd. This model was also hierarchical in the intercepts, but the intercepts were treated as iid draws for a N(0, 6^2) distribution. This model is given by the file Weighted_Heir_MLR.stan.  
+For weeks 2 and 3 (10/16/24) and (10/23/30) we submitted a version of the HMLR that was Hierarchical in the time coefficient with different means per clade across locations, but a shared sd for all clades. The intercepts were also given a hierarchical structure with different means per clade across locations, but with a shared sd. This model is given by the file Weighted_Heir_MLR_v2.stan.  
