@@ -351,18 +351,19 @@ mlr_probs <- function(stan, num_days, shifted = F){
   } else{
     K = stan$V
   }
-  days <- rep(0, K)
+  days <- rep(0, K) # the probablities for each day
   for(l in 1:L){
     intercepts <- means$raw_alpha[, l, ] # the alphas
     coef <- means$raw_beta[ , l , ] # the beta's
-    probs <- array( dim = c(K, num_days, length(intercepts[1,]))) # the matrix of probabilities for each day
-    mean_probs <- matrix( nrow = K, ncol = num_days)
-    dates <- c(1:num_days)
+    probs <- array( dim = c(K, num_days, length(intercepts[1,]))) # the matrix of probabilities for each day for each of the samples
+    mean_probs <- matrix( nrow = K, ncol = num_days) # the mean probabilities over all the samples
+    dates <- c(1:num_days) # the days we will calculate the probabilities for
     if(!(shifted)){
       for(j in 1:length(intercepts[1, ])){
         for( i in dates){ # getting the probabilities 
-          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1)
-          days[K] <- 1 - sum(days[1:(K-1)])
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1) # calculating the probablities 
+          #for all but the reference
+          days[K] <- 1 - sum(days[1:(K-1)]) # getting the probability for the reference  
           probs[  , i, j] <- days
         }
       }
@@ -383,13 +384,13 @@ mlr_probs <- function(stan, num_days, shifted = F){
     }
     for(i in 1:num_days){
       for(j in 1:K){
-        mean_probs[j, i] <- mean(probs[j, i, ])
+        mean_probs[j, i] <- mean(probs[j, i, ]) # finding the mean over the sampled probabilities 
       }
     }
-    full_probs[[stan$target_lo[l]]] <-mean_probs
+    full_probs[[stan$target_lo[l]]] <-mean_probs # saving the probabilities for the location
   }
   for(lo in stan$target_lo){
-    row.names(full_probs[[lo]]) <- stan$clades
+    row.names(full_probs[[lo]]) <- stan$clades # indexing the probablities by clade 
   }
   return(full_probs)
 }
