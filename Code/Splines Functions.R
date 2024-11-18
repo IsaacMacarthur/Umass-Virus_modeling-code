@@ -14,7 +14,7 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
   } else{
     target_lo = target_loc
   }
-  data_case <- filter(data, location %in% target_lo, date >= as.Date(as.Date(target_date) - num_days), date <= as.Date(target_date)) # dating from April 1st
+  data_case <- filter(data, location %in% target_lo, date >= as.Date(target_date) - num_days, date <= as.Date(target_date)) # dating from April 1st
   data_case$mlr <- c(1:length(data_case$clade)) # need numeric levels for the mlr
   j = 1
   for( k in unique(data$clade)){ # giving each clade a numeric level
@@ -49,9 +49,9 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
     data = mlr_data,    
     chains = 1,             
     warmup = warmup,          
-    iter = interations,            
+    iter = interations,
     cores = 8,
-    refresh = 150,
+    refresh = 150
   )
   return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, B = B, clades = clades ))
 }

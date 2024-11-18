@@ -72,7 +72,7 @@ stan_maker <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 
     warmup = warmup,          
     iter = interations,            
     cores = 8,
-    refresh = 500,
+    refresh = 500
   )
   return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, clades = clades ))
 }
@@ -452,7 +452,7 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
   }
   return(CIs)
 }
-plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL){
+plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow", "purple", "darkgreen", "pink"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL){
   # stan is the object returned by stan maker or stan maker mech
   # data is the virus data sets which points are to be ploted
   # colors is the list of colors to be used for plotting
