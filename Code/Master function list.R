@@ -631,7 +631,7 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
   }
   return(CIs)
 }
-plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow", "purple", "darkgreen", "pink"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL){
+plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow", "purple", "darkgreen", "pink", "gray", "lightblue"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL, splines = F){
   # stan is the object returned by stan maker or stan maker mech
   # data is the virus data sets which points are to be ploted
   # colors is the list of colors to be used for plotting
@@ -647,7 +647,11 @@ plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "ye
   } else {
     K <- stan$V
   }
-  model_probs <- mlr_probs(stan = stan, num_days = num_days, shifted = shifted)
+  if(splines){
+    model_probs <- mlr_probs_splines(stan = stan, num_days = num_days)
+  } else{
+    model_probs <- mlr_probs(stan = stan, num_days = num_days, shifted = shifted) 
+  }
   if(CI){
     CI_probs <- CI_maker(stan = stan, num_days = num_days, CI_level = CI_level, shifted = shifted)
   }
