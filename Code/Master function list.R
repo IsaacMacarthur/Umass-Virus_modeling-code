@@ -748,7 +748,7 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
   draws <- extract(stan$mlr_fit)
   if(splines){
     random_draws <- array(dim = c(K-1,1 + stan$B,N))
-    spline <- t(bs(dates, degree =  stan$B))
+    spline <- bs(1:160, degree =  stan$B)
   } else{
     random_draws <- array(dim = c(K-1,2,N)) 
   }
@@ -781,7 +781,10 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
       }
       for(i in 1:length(dates)){
         for(m in 1:N){
-          temp[1:(K-1)] <- exp(random_draws[, 1, m] + sum(random_draws[, 2:(stan$B + 1), m]*spline[, i]))/(sum(exp(random_draws[, 1, m] + sum(random_draws[, 2:(stan$B + 1), m]*spline[, i])))+1)
+          for(k in 1:(K-1)){
+            temp[k] <- exp(random_draws[k, 1, m] + sum(random_draws[k, 2:(stan$B + 1), m]*spline[dates[i],]))
+          }
+          temp[1:(K-1)] <- temp[1:(K-1)]/(sum(temp[1:(K-1)]) + 1)
           temp[K] <- 1 - sum(temp[1:(K-1)])
           values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
           horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(given_date + i - length(dates) + 10, K)
