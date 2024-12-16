@@ -6,10 +6,11 @@ clades:
   - "24F"
   - "24G"
   - "24H"
+  - "24I"
   - "recombinant"
   - "other"
 
-target_date: "2024-12-11"
+target_date: "2024-12-18"
 
 data: "./Data/Virus counts"
           
