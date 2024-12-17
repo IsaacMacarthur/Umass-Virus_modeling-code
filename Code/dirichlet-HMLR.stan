@@ -61,7 +61,11 @@ model {
 
     for(l in 1:L){
      for (n in 1:N) {
-      y[n, l, :] ~ dirichlet_multinomial(exp(alpha[l] + beta[l]*n));
+       if(sum(y[n,l,:]) == 0){
+         continue;
+       } else{
+        y[n, l, :] ~ dirichlet_multinomial(exp(alpha[l] + beta[l]*n)); 
+       }
     }
     }
   }
