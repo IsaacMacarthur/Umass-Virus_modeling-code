@@ -11,6 +11,7 @@ library(arrow)
 library(shinystan)
 library(yaml)
 library(splines)
+require(gtools)
 stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date(), num_days = 150, target_loc = NULL, interations = 3000, warmup = 1000, stan_file = "Heir_MLR_Splines.stan" ){
   # data is a dataframe containing the columns sequences, location and date.
   # B is the degree of the spline
@@ -517,20 +518,22 @@ get_energy_scores <- function(stan, old_data, new_data, target_date, dates = c(1
   }
 }
 
-mlr_probs <- function(stan, num_days, shifted = F){
-  # returns a list of probs from day 0 to the given day
-  # takes a stan object, returned by stan_maker and the number of days probs wanted, if shifted is
-  # true, then uses time since the variant was introduced instead of days from beginning of dataset, used for
-  # Mech model non-zero s_v
+mlr_probs <- function(stan, num_days, shifted = F, dirichlet = F){
   full_probs <- list()
-  means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta")) # the alpha and beta
-  L = stan$L
-  if(!is.null(stan$K)){
-    K = stan$K
+  if(dirichlet){
+    means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta", "kappa")) # the alpha and beta and scale parameter
   } else{
-    K = stan$V
+    means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta")) # the alpha and beta
   }
-  days <- rep(0, K) # the probablities for each day
+  # the number of location
+  L <- stan$L
+  # the number of clades
+  if(!is.null(stan$K)){
+    K <- stan$K
+  } else{
+    K <- stan$V
+  }
+  days <- rep(0, K) # the probabilities for each day
   for(l in 1:L){
     intercepts <- means$raw_alpha[, l, ] # the alphas
     coef <- means$raw_beta[ , l , ] # the beta's
@@ -539,16 +542,20 @@ mlr_probs <- function(stan, num_days, shifted = F){
     dates <- c(1:num_days) # the days we will calculate the probabilities for
     if(!(shifted)){
       for(j in 1:length(intercepts[1, ])){
-        for( i in dates){ # getting the probabilities 
-          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1) # calculating the probablities 
+        for( i in dates){ # getting the probabilities
+          days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1) # calculating the probablities
           #for all but the reference
-          days[K] <- 1 - sum(days[1:(K-1)]) # getting the probability for the reference  
-          probs[  , i, j] <- days
+          days[K] <- 1 - sum(days[1:(K-1)]) # getting the probability for the reference
+          if(dirichlet){
+            probs[, i, j] <- rdirichlet(1, means$kappa[j]*days) # if Dirichlet, using Dirichlet function for probabilities
+          } else{
+            probs[  , i, j] <- days
+          }
         }
       }
     } else {
       for( j in 1:length(intercepts[1, ])){
-        for( i in dates){ # getting the probabilities 
+        for( i in dates){ # getting the probabilities
           days[1:(K-1)] <- exp(intercepts[j, ] + coef[j, ]*(dates[i] - stan$start_times))
           for( m in 1:(K-1)){
             if(stan$start_times[m] >= i ){
@@ -563,23 +570,26 @@ mlr_probs <- function(stan, num_days, shifted = F){
     }
     for(i in 1:num_days){
       for(j in 1:K){
-        mean_probs[j, i] <- mean(probs[j, i, ]) # finding the mean over the sampled probabilities 
+        mean_probs[j, i] <- mean(probs[j, i, ]) # finding the mean over the sampled probabilities
       }
     }
     full_probs[[stan$target_lo[l]]] <-mean_probs # saving the probabilities for the location
   }
   for(lo in stan$target_lo){
-    row.names(full_probs[[lo]]) <- stan$clades # indexing the probablities by clade 
+    row.names(full_probs[[lo]]) <- stan$clades # indexing the probablities by clade
   }
   return(full_probs)
 }
-CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
+CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F, dirichlet = F){
   # takes in a stan object returned by stan maker, the number of days of probablities wanted, and the CI level, with default of 
   # 0.9, returns a named list of CI upper and lower bounds for each location, set shifted to True, if using Mech model
   # with non-zero s_v
   L <- stan$L
   CIs <- list()
   means <- extract(stan$mlr_fit, pars = c("raw_alpha", "raw_beta"))
+  if(dirichlet){
+    kappa <- extract(stan$mlr_fit, pars = "kappa")
+  }
   if( is.null(stan$K)){
     K <- stan$V
   } else{
@@ -598,7 +608,11 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
         for( i in dates){ # getting the probabilities 
           days[1:(K-1)] <- exp(intercepts[j, ] + coef[j,]*dates[i])/(sum(exp(intercepts[j, ] + coef[j, ]*dates[i]))+1)
           days[K] <- 1 - sum(days[1:(K-1)])
-          probs[  , i, j] <- days
+          if(dirichlet){
+            probs[  , i, j] <- rdirichlet(1, kappa$kappa[j]*days)
+          } else{
+            probs[  , i, j] <- days 
+          }
         }
       }
     } else {
@@ -631,7 +645,7 @@ CI_maker <- function(stan, num_days, CI_level = 0.9, shifted = F){
   }
   return(CIs)
 }
-plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow", "purple", "darkgreen", "pink", "gray", "lightblue"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL, splines = F){
+plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "yellow", "purple", "darkgreen", "pink", "gray", "lightblue"), target_date = Sys.Date(), num_days = 150, shifted = F, CI = F, CI_level = 0.9, other_probs = NULL, splines = F,dirichlet= F ){
   # stan is the object returned by stan maker or stan maker mech
   # data is the virus data sets which points are to be ploted
   # colors is the list of colors to be used for plotting
@@ -650,10 +664,12 @@ plot_data <- function(stan, data, colors = c("black","blue", "red", "green", "ye
   if(splines){
     model_probs <- mlr_probs_splines(stan = stan, num_days = num_days)
   } else{
-    model_probs <- mlr_probs(stan = stan, num_days = num_days, shifted = shifted) 
+    set.seed(90)
+    model_probs <- mlr_probs(stan = stan, num_days = num_days, shifted = shifted, dirichlet = dirichlet) 
   }
   if(CI){
-    CI_probs <- CI_maker(stan = stan, num_days = num_days, CI_level = CI_level, shifted = shifted)
+    set.seed(90)
+    CI_probs <- CI_maker(stan = stan, num_days = num_days, CI_level = CI_level, shifted = shifted, dirichlet = dirichlet)
   }
   for(l in 1:L){ 
     dates <- c(1:num_days)
@@ -731,10 +747,9 @@ convert_to_abbreviation <- function(states) {
   state_abbreviation_map <- setNames(c(state.abb,"PR","DC"), c(state.name, "Puerto Rico", "Washington DC"))
   sapply(states, function(state) state_abbreviation_map[[state]])
 }
-prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), splines = FALSE){
-  # takes in the stan object, and the date we are modeling on, outputs a df of the varient-forecasting submission
-  K <- stan$K
-  L <- stan$L
+prediction_sampler <- function(stan, given_date, N = 1000, dates = c(119:160), splines = FALSE, dirichlet = F){
+  K <- stan$K # the number of clades
+  L <- stan$L # the number of locations modleed
   target_lo <- convert_to_abbreviation(stan$target_lo) # mapping states to there two-letter form
   sample_ids <- c(rep("0", N*length(target_lo)*length(dates)*length(stan$clades))) # getting the right form for the ids
   clade_ids <- c(rep(stan$clades, N*length(target_lo)*length(dates))) # the ids for each clade
@@ -743,24 +758,29 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
   mean_locations <- c(rep("0",L*K*length(dates) ))
   horizon <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the day we are forecasting or nowcasting
   output_type <- c(rep("sample",N*length(target_lo)*length(dates)*length(stan$clades) ))
-  values <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the samples 
+  values <- c(rep(0, N*length(target_lo)*length(dates)*length(stan$clades))) # the samples
   temp <- c(rep(0, length(stan$clades))) # the samples for a given day
-  draws <- extract(stan$mlr_fit)
+  draws <- extract(stan$mlr_fit) # extracting the MCMC samples
   if(splines){
     random_draws <- array(dim = c(K-1,1 + stan$B,N))
     spline <- bs(1:160, degree =  stan$B)
+  } else if(dirichlet){
+    random_draws <- array(dim = c(K-1,2,N))
+    kappas <- rep(NA, N) # the scale parameters
   } else{
-    random_draws <- array(dim = c(K-1,2,N)) 
+    random_draws <- array(dim = c(K-1,2,N))
   }
+  # indexing the right location dates
   for(i in 1:length(target_lo)){
     location[(1 + (i-1)*(N*length(stan$clades)*length(dates))):( (i)*(N*length(stan$clades)*length(dates)))] <- rep(target_lo[i],N*length(stan$clades)*length(dates))
-    mean_locations[(1 + (i-1)*K*length(dates)):((i)*K*length(dates))] <- rep(target_lo[i],length(stan$clades)*length(dates)) 
+    mean_locations[(1 + (i-1)*K*length(dates)):((i)*K*length(dates))] <- rep(target_lo[i],length(stan$clades)*length(dates))
   }
+  # creating the sample ids for each location
   for(l in 1:L){
     for(i in 1:(length(dates))){
       for(m in 1:N){
         if( m-1 < 10){
-          word <- rep(paste0(target_lo[l],"0",m-1), K) 
+          word <- rep(paste0(target_lo[l],"0",m-1), K)
         } else{
           word <- rep(paste0(target_lo[l],m-1), K)
         }
@@ -768,6 +788,7 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
       }
     }
   }
+  # getting the sample predictions
   if(splines){
     for(l in 1:L){
       for(n in 1:N){
@@ -795,28 +816,38 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
     for(l in 1:L){
       for(n in 1:N){
         c <- ceiling(runif(1, min = 0, max = length(draws$raw_alpha[ ,1, 1])/N))
+        if(dirichlet){
+          kappas[n] <- draws$kappa[c + (n-1)*length(draws$kappa)/N]
+        }
         for(q in 1:(K-1)){
-          random_draws[q, ,n] <- c(draws$raw_alpha[c + (n-1)*length(draws$raw_alpha[ ,1, 1])/N,l,q], draws$raw_beta[c + (n-1)*length(draws$raw_alpha[ ,1, 1])/N,l,q] ) # getting the random draws 
+          random_draws[q, ,n] <- c(draws$raw_alpha[c + (n-1)*length(draws$raw_alpha[ ,1, 1])/N,l,q], draws$raw_beta[c + (n-1)*length(draws$raw_alpha[ ,1, 1])/N,l,q] ) # getting the random draws
         }
       }
       for(i in 1:length(dates)){
         for(m in 1:N){
           temp[1:(K-1)] <- exp(random_draws[, 1, m] + random_draws[, 2, m]*dates[i])/(sum(exp(random_draws[, 1, m] + random_draws[, 2, m]*dates[i]))+1)
           temp[K] <- 1 - sum(temp[1:(K-1)])
-          values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
+          if(dirichlet){
+            values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rdirichlet(1, kappas[m]*temp)
+          } else{
+            values[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- temp
+          }
           horizon[ (1 + (m-1)*K + (i-1)*N*(K) + (l-1)*(N)*(K)*(length(dates))):((m)*K + (i-1)*N*K + (l-1)*(N)*(K)*(length(dates)))  ] <- rep(given_date + i - length(dates) + 10, K)
         }
       }
-    } 
+    }
   }
   horizon <- as.Date(horizon)
+  # getting the mean probabilities
   if(splines){
-    means <- mlr_probs_splines(stan = stan, num_days = max(dates)) 
+    means <- mlr_probs_splines(stan = stan, num_days = max(dates))
+  } else if(dirichlet){
+    means <- mlr_probs(stan = stan, num_days = max(dates), dirichlet = T)
   } else{
-    means <- mlr_probs(stan = stan, num_days = max(dates)) 
+    means <- mlr_probs(stan = stan, num_days = max(dates))
   }
   mean_values <- c(rep(0, L*K*(length(dates))))
-  mean_sample_ids <- c(rep(NA,L*K*length(dates) )) 
+  mean_sample_ids <- c(rep(NA,L*K*length(dates) ))
   mean_output_type <- c(rep("mean",L*K*length(dates) ))
   mean_clade_ids <- c(rep(stan$clades, length(target_lo)*length(dates)))
   mean_origin_date <- c(rep(given_date,K*length(dates)*L))
@@ -827,9 +858,60 @@ prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), sp
       mean_horizon[(1 + (i-1)*K + (l-1)*(length(dates))*K):( (i)*K + (l-1)*(length(dates))*K) ] <- rep(given_date + i - length(dates) + 10, K)
     }
   }
+  #converting output types
   mean_horizon <- as.Date(mean_horizon)
   clade_ids <- as.character(clade_ids)
   mean_clade_ids <- as.character(mean_clade_ids)
+  # creating the dataframe
   df <- data.frame(nowcast_date = c(origin_date, mean_origin_date), target_date = c(horizon, mean_horizon), clade = c(clade_ids, mean_clade_ids), location = c(location, mean_locations), output_type = c(output_type, mean_output_type) , output_type_id = c(sample_ids,mean_sample_ids), value = c(values, mean_values))
   return(df)
+}
+stan_maker_dirichlet <- function(data,stan_file, num_seq = 1, target_date = Sys.Date(), num_days = 150, target_loc = NULL, interations = 3000, warmup = 1000){
+  # finding which locations to model.
+  if( is.null(target_loc)){
+    target_lo <- loc_finder(data = data, num_seq = num_seq, target_date = target_date)
+  } else{
+    target_lo = target_loc
+  }
+  # filtering to only the locations and dates that we want
+  data_case <- filter(data, location %in% target_lo, date >= as.Date(target_date) - num_days, date <= as.Date(target_date))
+  # days from start of dataset
+  data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days))
+  # the number of locations modeled
+  L = length(unique(data_case$location))
+  # the number of clades modeled
+  clades <- unique(data$clade)
+  K = length(clades)
+  # creating the array for input
+  data_set <- array(dim = c(num_days, L, K))
+  # filling in the input array
+  for(l in 1:L){
+    temp_data <- filter(data_case, location == target_lo[l])
+    for(k in 1:K){
+      for(n in 1:num_days){
+        data_set[n,l,k] <- sum(filter(temp_data, clade == clades[k], days == n )$sequences)
+      }
+    }
+  }
+  # putting the clades in the right order.
+  temp <- clades[1]
+  clades <- clades[-1]
+  clades[K] <- temp
+  # creating data for the stan file
+  mlr_data <- list(
+    N = num_days, # the number of days
+    L = L, # the number of locations
+    K = K, # the number of clades
+    y = data_set # the counts for each day, location, clade trio
+  )
+  # fitting the model
+  mlr_fit <- stan(
+    file = stan_file,
+    data = mlr_data,
+    chains = 1,
+    warmup = warmup,
+    iter = interations,
+    refresh = 500
+  )
+  return(list(mlr_fit = mlr_fit, L = L, K = K, target_lo = target_lo, clades = clades ))
 }
