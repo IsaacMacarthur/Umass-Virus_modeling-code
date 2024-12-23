@@ -747,7 +747,7 @@ convert_to_abbreviation <- function(states) {
   state_abbreviation_map <- setNames(c(state.abb,"PR","DC"), c(state.name, "Puerto Rico", "Washington DC"))
   sapply(states, function(state) state_abbreviation_map[[state]])
 }
-prediction_sampler <- function(stan, given_date, N = 1000, dates = c(119:160), splines = FALSE, dirichlet = F){
+prediction_sampler <- function(stan, given_date, N = 100, dates = c(119:160), splines = FALSE, dirichlet = F){
   K <- stan$K # the number of clades
   L <- stan$L # the number of locations modleed
   target_lo <- convert_to_abbreviation(stan$target_lo) # mapping states to there two-letter form
