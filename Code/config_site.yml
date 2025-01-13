@@ -10,7 +10,7 @@ clades:
   - "recombinant"
   - "other"
 
-target_date: "2025-01-08"
+target_date: "2025-01-15"
 
 data: "./Data/Virus counts"
           
