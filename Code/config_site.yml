@@ -1,5 +1,6 @@
 clades:
   - "24A"
+  - "24B"
   - "24C"
   - "24E"
   - "24F"
@@ -9,7 +10,7 @@ clades:
   - "recombinant"
   - "other"
 
-target_date: "2025-02-05"
+target_date: "2025-02-12"
 
 data: "./Data/Virus counts"
           
