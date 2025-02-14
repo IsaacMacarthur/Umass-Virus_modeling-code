@@ -40,7 +40,7 @@ stan_maker_splines <- function(data, B = 3, num_seq = 90, target_date = Sys.Date
     j = j + 1
   }
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) # days from start of dataset
-  L = length(unique(data_case$ll))
+  L = length(target_lo)
   K = length(unique(data_case$clade))
   clades <- unique(data$clade)
   temp <- clades[1]
@@ -230,7 +230,7 @@ stan_maker <- function(data, num_seq = 90, target_date = Sys.Date(), num_days = 
     j = j + 1
   }
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) # days from start of dataset
-  L = length(unique(data_case$ll))
+  L = length(target_lo)
   K = length(unique(data_case$clade))
   clades <- unique(data$clade)
   temp <- clades[1]
@@ -291,7 +291,7 @@ stan_maker_Mech <- function(data, num_seq = 90, target_date = Sys.Date(), num_da
     j = j + 1
   }
   data_case$days <- as.numeric(as_date(data_case$date)) - as.numeric(as_date(as.Date(target_date) - num_days)) + 1 # days from start of dataset
-  L = length(unique(data_case$ll))
+  L = length(target_lo)
   V = length(unique(data$clade))
   clades <- unique(data$clade)
   temp <- clades[1]
